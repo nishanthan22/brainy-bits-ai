@@ -1,4 +1,6 @@
 import os
+import sqlite3
+
 import cv2
 import dlib
 import numpy as np
@@ -14,17 +16,76 @@ import tensorflow as tf
 
 app = Flask(__name__)
 
+
+def create_database(db_name):
+    connection = sqlite3.connect(db_name)
+    db_cursor = connection.cursor()
+    db_cursor.execute('''
+            CREATE TABLE IF NOT EXISTS eye_track_data (
+                user_id INTEGER PRIMARY KEY,
+                Person_ID TEXT,
+                Duration_Eyes_Closed_s REAL,
+                Duration_Looking_Left_s REAL,
+                Duration_Looking_Right_s REAL,
+                Duration_Looking_Straight_s REAL,
+                Left_Counts INTEGER,
+                Right_Counts INTEGER,
+                Straight_Counts INTEGER
+            )
+        ''')
+
+    # Create emotion_detect_data table
+    db_cursor.execute('''
+            CREATE TABLE IF NOT EXISTS emotion_detect_data (
+                user_id INTEGER PRIMARY KEY,
+                Person_ID TEXT,
+                Angry_s REAL,
+                Sad_s REAL,
+                Happy_s REAL,
+                Fear_s REAL,
+                Disgust_s REAL,
+                Neutral_s REAL,
+                Surprise_s REAL
+            )
+        ''')
+
+    # Create head_pose_data table
+    db_cursor.execute('''
+            CREATE TABLE IF NOT EXISTS head_pose_data (
+                user_id INTEGER PRIMARY KEY,
+                Person_ID TEXT,
+                Looking_Forward_s REAL,
+                Looking_Left_s REAL,
+                Looking_Right_s REAL,
+                Looking_Up_s REAL,
+                Looking_Down_s REAL
+            )
+        ''')
+    connection.commit()
+    connection.close()
+
+
+# Function to get the specified file's path
+def get_abs_path(directory, file):
+    directory_path = os.path.join(os.getcwd(), '', directory)
+    file_path = os.path.join(directory_path, file)
+    return file_path
+
+
 @app.route('/')
 def home():
     return render_template('index.html')
+
 
 @app.route('/classroom_monitoring')
 def classroom_monitoring():
     return render_template('classroom_monitoring.html')
 
+
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 def generate_frames():
     # Load data from CSV (example)
@@ -56,12 +117,6 @@ def generate_frames():
         C = np.linalg.norm(eye[0] - eye[3])
         ear = (A + B) / (2.0 * C)
         return ear
-
-    # Function to get the specified file's path
-    def get_abs_path(directory, file):
-        directory_path = os.path.join(os.getcwd(), '', directory)
-        file_path = os.path.join(directory_path, file)
-        return file_path
 
     # Load dlib face detector and facial landmarks predictor
     detector = dlib.get_frontal_face_detector()
@@ -267,7 +322,8 @@ def generate_frames():
                     time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
 
                 # Display the text
-                cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0),
+                            2)
 
         # Encode the frame in JPEG format
         ret, buffer = cv2.imencode('.jpg', frame)
@@ -306,6 +362,7 @@ def generate_frames():
             writer.writerow([person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
                              time_right_seconds[person_id], time_up_seconds[person_id], time_down_seconds[person_id]])
 
+
 @app.route('/student_list')
 def student_list():
     # Example: Static student list
@@ -316,5 +373,9 @@ def student_list():
     ]
     return render_template('student_list.html', students=students)
 
+
 if __name__ == '__main__':
+    db_path = get_abs_path('data', 'brainy_bits.db')
+    if not os.path.exists(db_path):
+        create_database(db_path)
     app.run(debug=True)
