@@ -69,7 +69,6 @@ def generate_frames():
 
     # Load emotion detection model
     emotion_model = load_model(get_abs_path('scripts', 'FER_model.h5'))
-
     emotion_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     # Initialize video capture from the camera
@@ -267,7 +266,9 @@ def generate_frames():
                     time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
 
                 # Display the text
-                cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0
+
+, 255, 0), 2)
 
         # Encode the frame in JPEG format
         ret, buffer = cv2.imencode('.jpg', frame)
@@ -278,6 +279,27 @@ def generate_frames():
 
     cap.release()
 
+    # Debug print statements
+    print("Eye Tracking Data:")
+    print(duration_eyes_closed)
+    print(duration_looking_left)
+    print(duration_looking_right)
+    print(duration_looking_straight)
+    print(count_left)
+    print(count_right)
+    print(count_straight)
+
+    print("Emotion Detection Data:")
+    print(emotion_duration)
+
+    print("Head Pose Data:")
+    print(time_forward_seconds)
+    print(time_left_seconds)
+    print(time_right_seconds)
+    print(time_up_seconds)
+    print(time_down_seconds)
+
+    # Save the eye tracking data to a CSV file
     with open(get_abs_path('results', 'eye_tracking_data.csv'), 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(
@@ -288,6 +310,7 @@ def generate_frames():
                              duration_looking_right[person_id], duration_looking_straight[person_id],
                              count_left[person_id], count_right[person_id], count_straight[person_id]])
 
+    # Save the emotion detection data to a CSV file
     with open(get_abs_path('results', 'emotion_detection_data.csv'), 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["Person ID", "Angry (s)", "Sad (s)", "Happy (s)", "Fear (s)", "Disgust (s)", "Neutral (s)",
@@ -298,6 +321,7 @@ def generate_frames():
                              emotion_duration["disgust"][person_id], emotion_duration["neutral"][person_id],
                              emotion_duration["surprise"][person_id]])
 
+    # Save the head pose data to a CSV file
     with open(get_abs_path('results', 'head_pose_data.csv'), 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["Person ID", "Looking Forward (s)", "Looking Left (s)", "Looking Right (s)", "Looking Up (s)",

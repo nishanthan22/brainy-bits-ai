@@ -1,69 +1,8 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Classroom Monitoring</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-        }
-        .header {
-            background-color: #333;
-            color: white;
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-        }
-        .header img {
-            height: 50px;
-            margin-right: 20px;
-        }
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-        }
-        .container {
-            padding: 20px;
-            text-align: center;
-        }
-        .video-container {
-            text-align: center;
-            margin-top: 20px;
-        }
-        .video-container img {
-            max-width: 100%;
-            border: 2px solid #333;
-            border-radius: 5px;
-        }
-        .back-link {
-            display: block;
-            margin: 20px 0;
-            text-align: center;
-            color: #333;
-            text-decoration: none;
-            font-size: 18px;
-            background-color: #ddd;
-            padding: 10px 20px;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-        }
-        .back-link:hover {
-            background-color: #bbb;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
-        <h1>Classroom Monitoring Data</h1>
-    </div>
-    <div class="container">
-        <div class="video-container">
-            <img src="{{ url_for('video_feed') }}" width="1024" height="640" alt="Video Feed">
-        </div>
-        <a href="/" class="back-link">Back to Home</a>
-    </div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Classroom Monitoring{% endblock %}
+{% block content %}
+<div class="video-container">
+    <img src="{{ url_for('video_feed') }}" width="1024" height="640" alt="Video Feed">
+</div>
+<a href="/" class="back-link">Back to Home</a>
+{% endblock %}
