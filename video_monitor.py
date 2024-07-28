@@ -11,7 +11,7 @@ import tensorflow as tf
 from imutils import face_utils
 from scipy.ndimage import zoom
 from tensorflow.keras.models import load_model
-
+from datetime import datetime
 from db_utils import connect_to_db
 
 
@@ -61,6 +61,8 @@ def generate_frames():
         A = np.linalg.norm(eye[1] - eye[5])
         B = np.linalg.norm(eye[2] - eye[4])
         C = np.linalg.norm(eye[0] - eye[3])
+        if C == 0:
+            return 0  # Avoid division by zero
         ear = (A + B) / (2.0 * C)
         return ear
 
@@ -71,6 +73,9 @@ def generate_frames():
     emotion_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     cap = cv2.VideoCapture(0)
+
+    person_ids = {}  # Dictionary to store person_id and corresponding user_id
+    next_user_id = generate_user_id()
 
     duration_eyes_closed = {}
     duration_looking_left = {}
@@ -101,12 +106,19 @@ def generate_frames():
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = detector(gray)
+
             for i, face in enumerate(faces):
                 shape = predictor(gray, face)
                 shape = face_utils.shape_to_np(shape)
 
                 person_id = f"Person {i + 1}"
-                user_id = generate_user_id()
+
+                # Assign a unique user ID to each person and reuse it if they reappear
+                if person_id not in person_ids:
+                    person_ids[person_id] = next_user_id
+                    next_user_id = generate_user_id()
+
+                user_id = person_ids[person_id]
 
                 if person_id not in duration_eyes_closed:
                     duration_eyes_closed[person_id] = 0
@@ -166,6 +178,8 @@ def generate_frames():
                 face_crop = gray[y:y + h, x:x + w]
                 face_crop = zoom(face_crop, (48 / face_crop.shape[0], 48 / face_crop.shape[1]))
                 face_crop = face_crop.astype(np.float32)
+                if face_crop.max() == 0:
+                    continue
                 face_crop /= float(face_crop.max())
                 face_crop = np.reshape(face_crop.flatten(), (1, 48, 48, 1))
 
@@ -202,43 +216,44 @@ def generate_frames():
                                 face_2d.append([x, y])
                                 face_3d.append([x, y, lm.z])
 
-                    face_2d = np.array(face_2d, dtype=np.float64)
-                    face_3d = np.array(face_3d, dtype=np.float64)
-                    focal_length = 1 * img_w
-                    cam_matrix = np.array([[focal_length, 0, img_w / 2],
-                                           [0, focal_length, img_h / 2],
-                                           [0, 0, 1]])
+                    if face_2d and face_3d:
+                        face_2d = np.array(face_2d, dtype=np.float64)
+                        face_3d = np.array(face_3d, dtype=np.float64)
+                        focal_length = 1 * img_w
+                        cam_matrix = np.array([[focal_length, 0, img_w / 2],
+                                               [0, focal_length, img_h / 2],
+                                               [0, 0, 1]])
 
-                    dist_matrix = np.zeros((4, 1), dtype=np.float64)
+                        dist_matrix = np.zeros((4, 1), dtype=np.float64)
 
-                    success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+                        success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+                        if success:
+                            rmat, jac = cv2.Rodrigues(rot_vec)
 
-                    rmat, jac = cv2.Rodrigues(rot_vec)
+                            angles, mtx_r, mtx_q, qx, qy, qz = cv2.RQDecomp3x3(rmat)
 
-                    angles, mtx_r, mtx_q, qx, qy, qz = cv2.RQDecomp3x3(rmat)
+                            x_angle = angles[0] * 360
+                            y_angle = angles[1] * 360
+                            z_angle = angles[2] * 360
 
-                    x_angle = angles[0] * 360
-                    y_angle = angles[1] * 360
-                    z_angle = angles[2] * 360
+                            if y_angle < -10:
+                                text = "Looking Left"
+                                time_left_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif y_angle > 10:
+                                text = "Looking Right"
+                                time_right_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif x_angle < -10:
+                                text = "Looking Down"
+                                time_down_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif x_angle > 10:
+                                text = "Looking Up"
+                                time_up_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            else:
+                                text = "Looking Forward"
+                                time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
 
-                    if y_angle < -10:
-                        text = "Looking Left"
-                        time_left_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif y_angle > 10:
-                        text = "Looking Right"
-                        time_right_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif x_angle < -10:
-                        text = "Looking Down"
-                        time_down_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif x_angle > 10:
-                        text = "Looking Up"
-                        time_up_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    else:
-                        text = "Looking Forward"
-                        time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-
-                    cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                (0, 255, 0), 2)
+                            cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                        (0, 255, 0), 2)
 
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
@@ -258,29 +273,32 @@ def generate_frames():
 
         try:
             for person_id in duration_eyes_closed:
+                user_id = person_ids[person_id]
                 db_cursor.execute('''
-                    INSERT INTO eye_track_data (user_id, Person_ID, Duration_Eyes_Closed_s, Duration_Looking_Left_s, Duration_Looking_Right_s, Duration_Looking_Straight_s, Left_Counts, Right_Counts, Straight_Counts)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, duration_eyes_closed[person_id], duration_looking_left[person_id],
+                    INSERT INTO eye_track_data (user_id, Date, Person_ID, Duration_Eyes_Closed_s, Duration_Looking_Left_s, Duration_Looking_Right_s, Duration_Looking_Straight_s, Left_Counts, Right_Counts, Straight_Counts)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, datetime.now().date(), person_id, duration_eyes_closed[person_id], duration_looking_left[person_id],
                       duration_looking_right[person_id], duration_looking_straight[person_id], count_left[person_id],
                       count_right[person_id], count_straight[person_id]))
                 print(f"Inserted eye track data for {user_id}")
 
             for person_id in emotion_duration["angry"]:
+                user_id = person_ids[person_id]
                 db_cursor.execute('''
-                    INSERT INTO emotion_detect_data (user_id, Person_ID, Angry_s, Sad_s, Happy_s, Fear_s, Disgust_s, Neutral_s, Surprise_s)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, emotion_duration["angry"][person_id], emotion_duration["sad"][person_id],
+                    INSERT INTO emotion_detect_data (user_id, Date, Person_ID, Angry_s, Sad_s, Happy_s, Fear_s, Disgust_s, Neutral_s, Surprise_s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, datetime.now().date(), person_id, emotion_duration["angry"][person_id], emotion_duration["sad"][person_id],
                       emotion_duration["happy"][person_id], emotion_duration["fear"][person_id],
                       emotion_duration["disgust"][person_id], emotion_duration["neutral"][person_id],
                       emotion_duration["surprise"][person_id]))
                 print(f"Inserted emotion detect data for {user_id}")
 
             for person_id in time_forward_seconds:
+                user_id = person_ids[person_id]
                 db_cursor.execute('''
-                    INSERT INTO head_pose_data (user_id, Person_ID, Looking_Forward_s, Looking_Left_s, Looking_Right_s, Looking_Up_s, Looking_Down_s)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
+                    INSERT INTO head_pose_data (user_id, Date, Person_ID, Looking_Forward_s, Looking_Left_s, Looking_Right_s, Looking_Up_s, Looking_Down_s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, datetime.now().date(), person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
                       time_right_seconds[person_id], time_up_seconds[person_id], time_down_seconds[person_id]))
                 print(f"Inserted head pose data for {user_id}")
 

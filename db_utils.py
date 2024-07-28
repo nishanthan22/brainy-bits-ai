@@ -13,6 +13,7 @@ def create_database(db_path):
     db_cursor.execute('''
             CREATE TABLE IF NOT EXISTS eye_track_data (
                 user_id INTEGER PRIMARY KEY,
+                Date DATE,
                 Person_ID TEXT,
                 Duration_Eyes_Closed_s REAL,
                 Duration_Looking_Left_s REAL,
@@ -27,6 +28,7 @@ def create_database(db_path):
     db_cursor.execute('''
             CREATE TABLE IF NOT EXISTS emotion_detect_data (
                 user_id INTEGER PRIMARY KEY,
+                Date DATE,
                 Person_ID TEXT,
                 Angry_s REAL,
                 Sad_s REAL,
@@ -41,6 +43,7 @@ def create_database(db_path):
     db_cursor.execute('''
             CREATE TABLE IF NOT EXISTS head_pose_data (
                 user_id INTEGER PRIMARY KEY,
+                Date DATE,
                 Person_ID TEXT,
                 Looking_Forward_s REAL,
                 Looking_Left_s REAL,
