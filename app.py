@@ -130,6 +130,10 @@ def fetch_focus_data():
             not_focussed += 1
         elif 'Sad_s' in datalist and 'Looking_Forward_s' not in datalist:
             not_focussed += 1
+        elif 'Duration_Looking_Left_s' in datalist and 'Looking_Left_s' in datalist:
+            focussed += 1
+        elif 'Duration_Right_Left_s' in datalist and 'Looking_Right_s' in datalist:
+            focussed += 1
         else:
             focussed += 1
 
@@ -249,6 +253,10 @@ def fetch_focus_data_today():
             not_focussed += 1
         elif 'Sad_s' in datalist and 'Looking_Forward_s' not in datalist:
             not_focussed += 1
+        elif 'Duration_Looking_Left_s' in datalist and 'Looking_Left_s' in datalist:
+            focussed +=1
+        elif 'Duration_Right_Left_s' in datalist and 'Looking_Right_s' in datalist:
+            focussed +=1
         else:
             focussed += 1
 
