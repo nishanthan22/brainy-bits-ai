@@ -2,6 +2,7 @@ from flask import Flask, render_template, Response, jsonify
 from config import logger
 from db_utils import create_database_tables
 app = Flask(__name__)
+import datetime
 
 
 @app.route('/init_database', methods=['GET'])
@@ -149,13 +150,14 @@ def fetch_focus_data_today():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    today = date.today()
+    today = datetime.date.today()
+    print(today)
 
     cursor.execute("""
         SELECT
             user_id
         FROM emotion_detect_data
-        WHERE DATE(timestamp) = %s
+        WHERE DATE(Date) = %s
     """, (today,))
 
     user_id_list = cursor.fetchall()
@@ -175,7 +177,7 @@ def fetch_focus_data_today():
                        Neutral_s,
                        Surprise_s
                    FROM emotion_detect_data
-                   WHERE user_id = %s AND DATE(timestamp) = %s
+                   WHERE user_id = %s AND DATE(Date) = %s
                """, (i, today))
         row = cursor.fetchone()
 
@@ -195,7 +197,7 @@ def fetch_focus_data_today():
                                Looking_Up_s,
                                Looking_Down_s
                            FROM head_pose_data
-                           WHERE user_id = %s AND DATE(timestamp) = %s
+                           WHERE user_id = %s AND DATE(Date) = %s
                        """, (i, today))
         row = cursor.fetchone()
 
@@ -214,7 +216,7 @@ def fetch_focus_data_today():
                                        Duration_Looking_Right_s,
                                        Duration_Looking_Straight_s
                                    FROM eye_track_data
-                                   WHERE user_id = %s AND DATE(timestamp) = %s
+                                   WHERE user_id = %s AND DATE(Date) = %s
                                """, (i, today))
         row = cursor.fetchone()
 
@@ -251,6 +253,42 @@ def get_data_today():
         logger.error('Error fetching today data:', exc_info=True)
         return jsonify({'error': str(e)})
 
+
+def fetch_focus_data_over_time():
+    from db_utils import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            Date,
+            SUM(CASE WHEN condition_for_focussed THEN 1 ELSE 0 END) as Focussed,
+            SUM(CASE WHEN NOT condition_for_focussed THEN 1 ELSE 0 END) as Not_Focussed
+        FROM
+            your_table_name
+        GROUP BY
+            Date
+        ORDER BY
+            Date ASC
+    """)
+
+    data = cursor.fetchall()
+    conn.close()
+
+    formatted_data = [{"date": str(row[0]), "focussed": row[1], "not_focussed": row[2]} for row in data]
+    return formatted_data
+
+
+def get_line_chart_data():
+    logger.debug("Entering get_line_chart_data method")
+    print('line')
+    try:
+        focus_data_over_time = fetch_focus_data_over_time()
+        logger.info('Fetched focus data over time:', focus_data_over_time)
+        return jsonify(focus_data_over_time)
+    except Exception as e:
+        logger.error('Error fetching focus data over time:', exc_info=True)
+        return jsonify({'error': str(e)})
 
 
 @app.route('/video_feed')

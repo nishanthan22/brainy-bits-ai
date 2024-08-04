@@ -71,6 +71,13 @@
                     drawPieChart('#todayChart', todayPieData);
                 })
                 .catch(error => console.error('Error fetching today data:', error));
+
+            fetch('/get_line_chart_data')
+                .then(response => response.json())
+                .then(data => {
+                    drawLineChart('#lineChart', data);
+                })
+                .catch(error => console.error('Error fetching line chart data:', error));
         });
 
         function drawPieChart(selector, data) {
@@ -103,6 +110,55 @@
                 .attr('text-anchor', 'middle')
                 .text(d => `${d.data.label}: ${d.data.value}`);
         }
+
+        function drawLineChart(selector, data) {
+            const svg = d3.select(selector);
+            const margin = {top: 20, right: 30, bottom: 30, left: 40};
+            const width = +svg.attr("width") - margin.left - margin.right;
+            const height = +svg.attr("height") - margin.top - margin.bottom;
+
+            const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleTime().range([0, width]);
+            const y = d3.scaleLinear().range([height, 0]);
+
+            const lineFocus = d3.line()
+                .x(d => x(new Date(d.date)))
+                .y(d => y(d.focussed));
+
+            const lineNotFocus = d3.line()
+                .x(d => x(new Date(d.date)))
+                .y(d => y(d.not_focussed));
+
+            x.domain(d3.extent(data, d => new Date(d.date)));
+            y.domain([0, d3.max(data, d => Math.max(d.focussed, d.not_focussed))]);
+
+            g.append("g")
+                .attr("class", "axis axis--x")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickFormat(d3.timeFormat("%Y-%m-%d")));
+
+            g.append("g")
+                .attr("class", "axis axis--y")
+                .call(d3.axisLeft(y));
+
+            g.append("path")
+                .datum(data)
+                .attr("class", "line")
+                .attr("fill", "none")
+                .attr("stroke", "#01FF48")
+                .attr("stroke-width", 2)
+                .attr("d", lineFocus);
+
+            g.append("path")
+                .datum(data)
+                .attr("class", "line")
+                .attr("fill", "none")
+                .attr("stroke", "#F98080")
+                .attr("stroke-width", 2)
+                .attr("d", lineNotFocus);
+        }
+
     </script>
     <div>
         <a href="/" class="back-link">Back to Home</a>
