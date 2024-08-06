@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+.about-background {
+    background-image: url("{{ url_for('static', filename='C1.png') }}");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    position: relative;
+    padding: 60px 0;
+    color: #fff;
+}
+
+.about-background::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5); /* Overlay color */
+    z-index: 1;
+}
+
+.about-content {
+    position: relative;
+    z-index: 2;
+    color: #fff; /* Ensure text is readable over the background */
+}
+
+@keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes slideUp {
+    0% { transform: translateY(20px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+.about-content p {
+    animation: fadeIn 1s ease-in-out, slideUp 1s ease-in-out;
+}
+
+.about-content h2 {
+    animation: fadeIn 2s ease-in-out, slideUp 2s ease-in-out;
+}
+
+.text-primary-custom {
+    color: #B1B9C1; /* Adjust the color as necessary */
+}
+</style>
+
+<div class="about-page">
+    <div class="about-background">
+        <div class="container about-content">
+            <h2 class="text-center text-primary-custom my-4">About Us</h2>
+            <div class="row">
+                <div class="col-md-12">
+                    <p>Brainy Bits is dedicated to advancing the field of educational technology by developing innovative AI solutions for classroom monitoring. Our mission is to enhance the learning environment by providing educators with powerful tools to understand and respond to student behaviors through real-time analysis.</p>
+                    <p>Founded in 2024, Brainy Bits has developed cutting-edge technologies in computer vision and emotion detection to create an integrated system that monitors various aspects of student engagement. Our goal is to foster a responsive educational ecosystem that supports personalized learning experiences and effective exam proctoring.</p>
+                    <p>We believe in the power of technology to transform education and are committed to continuous improvement through agile development practices. Our team is driven by a passion for innovation and a commitment to helping educators achieve better outcomes for their students. Join us in our mission to revolutionize education with AI-driven insights and solutions.</p>
+                    <p>If you have any questions or would like to learn more about our initiatives, please feel free to <a href="{{ url_for('contact_us') }}">contact us</a>.</p>
+                    <h3 class="mt-5">Our Vision</h3>
+                    <p>Our vision is to create a world where technology empowers educators to provide personalized learning experiences, ensuring every student can reach their full potential. We aim to bridge the gap between technology and education, making advanced tools accessible and effective for all learning environments.</p>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -154,3 +154,7 @@ cython_debug/
 
 # PyCharm
 .idea/
+
+results/
+results/**
+data/app.log

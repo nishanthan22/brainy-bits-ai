@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Terms of Service</h1>
+    <div class="card p-4">
+        <h2>Introduction</h2>
+        <p>Welcome to Brainy Bits. By accessing or using our AI-driven classroom monitoring services and website, you agree to comply with and be bound by these Terms of Service.</p>
+
+        <h2>Use of Our Services</h2>
+        <p>You may use our services only for lawful educational purposes and in accordance with these Terms of Service. You agree not to use our services in any way that violates any applicable federal, state, local, or international law or regulation.</p>
+
+        <h2>Intellectual Property</h2>
+        <p>The content, layout, design, data, databases, and graphics on this website and within our services are protected by intellectual property laws and are owned by Brainy Bits. You may not reproduce, distribute, or create derivative works based on the content without our prior written permission.</p>
+
+        <h2>Account Security</h2>
+        <p>If you create an account on our site, you are responsible for maintaining the confidentiality of your account and password and for restricting access to your computer. You agree to accept responsibility for all activities that occur under your account or password.</p>
+
+        <h2>Limitation of Liability</h2>
+        <p>Brainy Bits will not be liable for any damages of any kind arising from the use of our services, including, but not limited to, direct, indirect, incidental, punitive, and consequential damages.</p>
+
+        <h2>Changes to Terms</h2>
+        <p>We may revise these Terms of Service from time to time. By continuing to use our services after such changes are posted, you agree to be bound by the revised terms.</p>
+
+        <h2>Contact Us</h2>
+        <p>If you have any questions about these Terms of Service, please contact us at <a href="{{ url_for('contact_us') }}">info@brainybits.com</a>.</p>
+    </div>
+</div>
+{% endblock %}

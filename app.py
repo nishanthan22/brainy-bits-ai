@@ -1,186 +1,463 @@
-from datetime import datetime, timedelta
-from flask_sqlalchemy import SQLAlchemy
-from flask import Flask, render_template, Response, jsonify
-from video_monitor import get_abs_path
-from db_utils import check_create_database
-import sqlite3, os
+from datetime import date
+
+from flask import Flask, request, redirect, render_template, Response, jsonify, url_for
+from config import logger
+from db_utils import create_database_tables
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
-from sqlalchemy import func, case, and_
-import logging
+app.secret_key = 'forcontactus'
+csrf = CSRFProtect(app)
 
 
-db_path = get_abs_path('data', 'brainy_bits.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data/brainy_bits.db'  # Update with your database URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+@app.route('/init_database', methods=['GET'])
+def init_database():
+    logger.info("Initiating database setup.")
+    status_code, error = create_database_tables()
+    if status_code == 1:
+        logger.info("Database initialized successfully.")
+        return jsonify({"status": "SUCCESS", "code": "200 OK", "message": "Database initialized successfully"})
+    else:
+        logger.error(f"Database initialization failed: {error}")
+        return jsonify(
+            {"status": "FAILURE", "code": "500", "message": "Database initialization failed", "error": error})
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-class Emotion(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False)
-    emotion = db.Column(db.Float, nullable=False)
-
-class EyeTracking(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False)
-    direction = db.Column(db.Float, nullable=False)
-
-class HeadPose(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False)
-    pose = db.Column(db.Float, nullable=False)
 
 @app.route('/')
 def home():
+    logger.debug("Rendering home page.")
     return render_template('index.html')
 
 
 @app.route('/classroom_monitoring')
 def classroom_monitoring():
+    logger.debug("Rendering classroom monitoring page.")
     return render_template('classroom_monitoring.html')
+
 
 @app.route('/dashboard')
 def dashboard():
+    logger.debug("Rendering dashboard page.")
     return render_template('dashboard.html')
 
-def get_abs_path(*args):
-    return os.path.join(os.path.abspath(os.path.dirname(__file__)), *args)
 
-def connect_to_db(db_path):
-    db_conn = sqlite3.connect(db_path)
-    return db_conn
+@app.route('/socials')
+def socials():
+    return render_template('socials.html')
+
+
+@app.route('/about_us')
+def about_us():
+    return render_template('about_us.html')
+
+
+@app.route('/privacy_policy')
+def privacy_policy():
+    return render_template('privacy_policy.html')
+
+
+@app.route('/terms_of_service')
+def terms_of_service():
+    return render_template('terms_of_service.html')
+
+
+@app.route('/advertise')
+def advertise():
+    return render_template('advertise.html')
+
+
+@app.route('/contact_us', methods=['GET', 'POST'])
+def contact_us():
+    if request.method == 'POST':
+        # Process the form data here
+        # name = request.form.get('name')
+        # email = request.form.get('email')
+        # message = request.form.get('message')
+
+        # After processing, redirect or respond accordingly
+        return redirect(url_for('contact_us'))  # Or any other relevant route
+    return render_template('contact_us.html')
+
+
+@app.route('/team_details')
+def team_details():
+    return render_template('team_details.html')
 
 
 def fetch_focus_data():
-    conn = connect_to_db('data/brainy_bits.db')  # Update with your actual database path
+    from db_utils import get_db_connection
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Aggregate the total seconds for each emotion
     cursor.execute("""
-        SELECT 
-            SUM(Angry_s) AS Angry_s,
-            SUM(Sad_s) AS Sad_s,
-            SUM(Happy_s) AS Happy_s,
-            SUM(Fear_s) AS Fear_s,
-            SUM(Disgust_s) AS Disgust_s,
-            SUM(Neutral_s) AS Neutral_s,
-            SUM(Surprise_s) AS Surprise_s
+        SELECT
+            user_id
         FROM emotion_detect_data
-        GROUP BY Person_ID
+        WHERE Date >= CURDATE() - INTERVAL 7 DAY
     """)
-    emotion_totals = cursor.fetchone()
 
-    cursor.execute("""
-            SELECT Person_ID,
-            SUM(Looking_Forward_s) AS Looking_Forward_s,
-            SUM(Looking_Left_s) AS Looking_Left_s,
-            SUM(Looking_Right_s) AS Looking_Right_s,
-            SUM(Looking_Up_s) AS Looking_Up_s,
-            SUM(Looking_Down_s) AS Looking_Down_s
-        FROM head_pose_data
-        GROUP BY Person_ID
-        """)
+    user_id_list = cursor.fetchall()
+    user_id_list = [user_id[0] for user_id in user_id_list]
 
-    head_pose_data = cursor.fetchall()
+    focussed = 0
+    not_focussed = 0
+    for i in user_id_list:
+        datalist = []
+        cursor.execute("""
+                   SELECT
+                       Angry_s,
+                       Sad_s,
+                       Happy_s,
+                       Fear_s,
+                       Disgust_s,
+                       Neutral_s,
+                       Surprise_s
+                   FROM emotion_detect_data
+                   WHERE user_id = %s
+               """, (i,))
+        row = cursor.fetchone()
 
-    cursor.execute("""
-            SELECT Person_ID,
-                SUM(Duration_Eyes_Closed_s) AS Duration_Eyes_Closed_s,
-                SUM(Duration_Looking_Left_s) AS Duration_Looking_Left_s,
-                SUM(Duration_Looking_Right_s) AS Duration_Looking_Right_s,
-                SUM(Duration_Looking_Straight_s) AS Duration_Looking_Straight_s
-            FROM eye_track_data
-            GROUP BY Person_ID
-        """)
-    eye_track_data = cursor.fetchall()
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Angry_s', 'Sad_s', 'Happy_s', 'Fear_s', 'Disgust_s', 'Neutral_s', 'Surprise_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        cursor.execute("""
+                           SELECT
+                               Looking_Forward_s,
+                               Looking_Left_s,
+                               Looking_Right_s,
+                               Looking_Up_s,
+                               Looking_Down_s
+                           FROM head_pose_data
+                           WHERE user_id = %s
+                       """, (i,))
+        row = cursor.fetchone()
+
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Looking_Forward_s', 'Looking_Left_s', 'Looking_Right_s', 'Looking_Up_s', 'Looking_Down_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        cursor.execute("""
+                                   SELECT
+                                       Duration_Eyes_Closed_s,
+                                       Duration_Looking_Left_s,
+                                       Duration_Looking_Right_s,
+                                       Duration_Looking_Straight_s
+                                   FROM eye_track_data
+                                   WHERE user_id = %s
+                               """, (i,))
+        row = cursor.fetchone()
+
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Duration_Eyes_Closed_s', 'Duration_Looking_Left_s', 'Duration_Looking_Right_s',
+                       'Duration_Looking_Straight_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        if ('Happy_s' in datalist or 'Neutral_s' in datalist) and 'Duration_Looking_Straight_s' in datalist:
+            focussed += 1
+        elif 'Looking_Down_s' in datalist or 'Duration_Eyes_Closed_s' in datalist or 'Angry_s' in datalist or 'Fear_s' in datalist or 'Surprise_s' in datalist:
+            not_focussed += 1
+        elif 'Looking_Forward' in datalist and (
+                'Duration_Looking_Left_s' in datalist or 'Duration_Looking_Right_s' in datalist):
+            not_focussed += 1
+        elif 'Sad_s' in datalist and 'Duration_Eyes_Closed_s' in datalist:
+            not_focussed += 1
+        elif 'Sad_s' in datalist and 'Looking_Forward_s' not in datalist:
+            not_focussed += 1
+        elif 'Duration_Looking_Left_s' in datalist and 'Looking_Left_s' in datalist:
+            focussed += 1
+        elif 'Duration_Right_Left_s' in datalist and 'Looking_Right_s' in datalist:
+            focussed += 1
+        else:
+            focussed += 1
 
     conn.close()
 
-    def round_float(value):
-        if isinstance(value, float):
-            # Round to 1 decimal place if the decimal part has more than 2 digits
-            return round(value, 1) if len(f"{value:.10f}".split('.')[1]) > 2 else value
-        return value
-
-    def process_row(row):
-        if isinstance(row, (list, tuple)):
-            # Apply rounding to each float in the row
-            return tuple(round_float(item) for item in row)
-        elif isinstance(row, float):
-            # Convert single float to a tuple with the float value
-            return (round_float(row),)
-        else:
-            # Handle other unexpected types if necessary
-            print(f"Unexpected row type: {type(row)}")
-            return None
-
-    def create_dict_from_rows(rows):
-        result = {}
-        for index, row in enumerate(rows):
-            if row:
-                if len(row) > 1:
-                    # Handle rows with multiple elements
-                    result[row[0]] = row[1:]
-                elif len(row) == 1:
-                    # Handle single float rows by creating default key-value pairs
-                    result[f"key_{index + 1}"] = row[0]
-                else:
-                    print(f"Row does not have enough data to create a dictionary entry: {row}")
-        return result
-
-    # Process and create dictionaries
-    emotion_totals = [process_row(row) for row in emotion_totals]
-    head_pose_data = [process_row(row) for row in head_pose_data]
-    eye_track_data = [process_row(row) for row in eye_track_data]
-
-    emotion_dict = create_dict_from_rows(emotion_totals)
-    head_pose_dict = create_dict_from_rows(head_pose_data)
-    eye_tracking_dict = create_dict_from_rows(eye_track_data)
-
-    print(emotion_dict)
-
-    focused = 0
-    not_focused = 0
-
-    print('works')
-
-    for person_id in emotion_dict:
-        # Directly access the float value
-        neutral_time = emotion_dict[person_id]
-        print('works2')
-
-        # Calculate total emotion time if you have multiple values to sum
-        # For single float values, this will be just the float itself
-        total_emotion_time = neutral_time
-        print(total_emotion_time)
-
-        # Define conditions for being focused
-        if (neutral_time > total_emotion_time / 2 or
-                head_pose_dict.get(person_id, [0] * 5)[0] > sum(head_pose_dict.get(person_id, [0] * 5)[1:]) or
-                eye_tracking_dict.get(person_id, [0] * 4)[3] > sum(eye_tracking_dict.get(person_id, [0] * 4)[:3])):
-            focused += neutral_time
-        else:
-            not_focused += total_emotion_time - neutral_time
-
-    print(focused)
-    print(not_focused)
-
     return {
-        'neutral': focused,
-        'not_neutral': not_focused
+        'Focussed': focussed,
+        'Not Focussed': not_focussed
     }
+
 
 @app.route('/get_data')
 def get_data():
+    logger.debug("Entering get_data method")
     try:
         focus_data = fetch_focus_data()
+        logger.info('Fetched focus data:', focus_data)
         return jsonify(focus_data)
     except Exception as e:
-        print('Error:', str(e))
-        return jsonify({'error': str(e)}), 500
+        logger.error('Error fetching focus data:', exc_info=True)
+        return jsonify({'error': str(e)})
+
+
+def fetch_focus_data_today():
+    from db_utils import get_db_connection
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    today = date.today()
+
+    cursor.execute("""
+        SELECT
+            user_id
+        FROM emotion_detect_data
+        WHERE Date = %s
+    """, (today,))
+
+    user_id_list = cursor.fetchall()
+    user_id_list = [user_id[0] for user_id in user_id_list]
+
+    focussed = 0
+    not_focussed = 0
+    for i in user_id_list:
+        datalist = []
+        cursor.execute("""
+                   SELECT
+                       Angry_s,
+                       Sad_s,
+                       Happy_s,
+                       Fear_s,
+                       Disgust_s,
+                       Neutral_s,
+                       Surprise_s
+                   FROM emotion_detect_data
+                   WHERE user_id = %s AND Date = %s
+               """, (i, today))
+        row = cursor.fetchone()
+
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Angry_s', 'Sad_s', 'Happy_s', 'Fear_s', 'Disgust_s', 'Neutral_s', 'Surprise_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        cursor.execute("""
+                           SELECT
+                               Looking_Forward_s,
+                               Looking_Left_s,
+                               Looking_Right_s,
+                               Looking_Up_s,
+                               Looking_Down_s
+                           FROM head_pose_data
+                           WHERE user_id = %s AND Date = %s
+                       """, (i, today))
+        row = cursor.fetchone()
+
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Looking_Forward_s', 'Looking_Left_s', 'Looking_Right_s', 'Looking_Up_s', 'Looking_Down_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        cursor.execute("""
+                                   SELECT
+                                       Duration_Eyes_Closed_s,
+                                       Duration_Looking_Left_s,
+                                       Duration_Looking_Right_s,
+                                       Duration_Looking_Straight_s
+                                   FROM eye_track_data
+                                   WHERE user_id = %s AND Date = %s
+                               """, (i, today))
+        row = cursor.fetchone()
+
+        if row:
+            max_value = max(row)
+            max_column_index = row.index(max_value)
+            columns = ['Duration_Eyes_Closed_s', 'Duration_Looking_Left_s', 'Duration_Looking_Right_s',
+                       'Duration_Looking_Straight_s']
+            max_column = columns[max_column_index]
+
+            datalist.append(max_column)
+
+        if ('Happy_s' in datalist or 'Neutral_s' in datalist) and 'Duration_Looking_Straight_s' in datalist:
+            focussed += 1
+        elif 'Looking_Down_s' in datalist or 'Duration_Eyes_Closed_s' in datalist or 'Angry_s' in datalist or 'Fear_s' in datalist or 'Surprise_s' in datalist:
+            not_focussed += 1
+        elif 'Looking_Forward' in datalist and (
+                'Duration_Looking_Left_s' in datalist or 'Duration_Looking_Right_s' in datalist):
+            not_focussed += 1
+        elif 'Sad_s' in datalist and 'Duration_Eyes_Closed_s' in datalist:
+            not_focussed += 1
+        elif 'Sad_s' in datalist and 'Looking_Forward_s' not in datalist:
+            not_focussed += 1
+        elif 'Duration_Looking_Left_s' in datalist and 'Looking_Left_s' in datalist:
+            focussed += 1
+        elif 'Duration_Right_Left_s' in datalist and 'Looking_Right_s' in datalist:
+            focussed += 1
+        else:
+            focussed += 1
+
+    conn.close()
+
+    return {
+        'Focussed': focussed,
+        'Not Focussed': not_focussed
+    }
+
+
+@app.route('/get_data_today')
+def get_data_today():
+    logger.debug("Entering get_data_today method")
+    try:
+        today_data = fetch_focus_data_today()
+        logger.info('Fetched today data:', today_data)
+        return jsonify(today_data)
+    except Exception as e:
+        logger.error('Error fetching today data:', exc_info=True)
+        return jsonify({'error': str(e)})
+
+
+@app.route('/get_weekly_data')
+def get_weekly_data():
+    from db_utils import get_db_connection
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get the last 7 days' data
+        cursor.execute("""
+            SELECT
+                Date
+            FROM emotion_detect_data
+            WHERE Date >= CURDATE() - INTERVAL 30 DAY
+            GROUP BY Date
+            ORDER BY Date ASC
+        """)
+
+        weekly_data = cursor.fetchall()
+        formatted_data = []
+
+        for date_row in weekly_data:
+            date = date_row[0]
+
+            # Fetch user_id list for the current date
+            cursor.execute("""
+                SELECT
+                    user_id
+                FROM emotion_detect_data
+                WHERE Date = %s
+            """, (date,))
+
+            user_id_list = cursor.fetchall()
+            user_id_list = [user_id[0] for user_id in user_id_list]
+
+            focussed = 0
+            not_focussed = 0
+
+            for i in user_id_list:
+                datalist = []
+
+                # Get emotion data
+                cursor.execute("""
+                    SELECT
+                        Angry_s,
+                        Sad_s,
+                        Happy_s,
+                        Fear_s,
+                        Disgust_s,
+                        Neutral_s,
+                        Surprise_s
+                    FROM emotion_detect_data
+                    WHERE user_id = %s AND Date = %s
+                """, (i, date))
+                row = cursor.fetchone()
+
+                if row:
+                    max_value = max(row)
+                    max_column_index = row.index(max_value)
+                    columns = ['Angry_s', 'Sad_s', 'Happy_s', 'Fear_s', 'Disgust_s', 'Neutral_s', 'Surprise_s']
+                    max_column = columns[max_column_index]
+                    datalist.append(max_column)
+
+                # Get head pose data
+                cursor.execute("""
+                    SELECT
+                        Looking_Forward_s,
+                        Looking_Left_s,
+                        Looking_Right_s,
+                        Looking_Up_s,
+                        Looking_Down_s
+                    FROM head_pose_data
+                    WHERE user_id = %s AND Date = %s
+                """, (i, date))
+                row = cursor.fetchone()
+
+                if row:
+                    max_value = max(row)
+                    max_column_index = row.index(max_value)
+                    columns = ['Looking_Forward_s', 'Looking_Left_s', 'Looking_Right_s', 'Looking_Up_s',
+                               'Looking_Down_s']
+                    max_column = columns[max_column_index]
+                    datalist.append(max_column)
+
+                # Get eye track data
+                cursor.execute("""
+                    SELECT
+                        Duration_Eyes_Closed_s,
+                        Duration_Looking_Left_s,
+                        Duration_Looking_Right_s,
+                        Duration_Looking_Straight_s
+                    FROM eye_track_data
+                    WHERE user_id = %s AND Date = %s
+                """, (i, date))
+                row = cursor.fetchone()
+
+                if row:
+                    max_value = max(row)
+                    max_column_index = row.index(max_value)
+                    columns = ['Duration_Eyes_Closed_s', 'Duration_Looking_Left_s', 'Duration_Looking_Right_s',
+                               'Duration_Looking_Straight_s']
+                    max_column = columns[max_column_index]
+                    datalist.append(max_column)
+
+                # Determine focus status
+                if ('Happy_s' in datalist or 'Neutral_s' in datalist) and 'Duration_Looking_Straight_s' in datalist:
+                    focussed += 1
+                elif 'Looking_Down_s' in datalist or 'Duration_Eyes_Closed_s' in datalist or 'Angry_s' in datalist or 'Fear_s' in datalist or 'Surprise_s' in datalist:
+                    not_focussed += 1
+                elif 'Looking_Forward_s' in datalist and (
+                        'Duration_Looking_Left_s' in datalist or 'Duration_Looking_Right_s' in datalist):
+                    not_focussed += 1
+                elif 'Sad_s' in datalist and 'Duration_Eyes_Closed_s' in datalist:
+                    not_focussed += 1
+                elif 'Sad_s' in datalist and 'Looking_Forward_s' not in datalist:
+                    not_focussed += 1
+                elif 'Duration_Looking_Left_s' in datalist and 'Looking_Left_s' in datalist:
+                    focussed += 1
+                elif 'Duration_Looking_Right_s' in datalist and 'Looking_Right_s' in datalist:
+                    focussed += 1
+                else:
+                    focussed += 1
+
+            formatted_data.append({
+                "date": date.strftime('%Y-%m-%d'),
+                "focused": focussed,
+                "not_focused": not_focussed
+            })
+
+        return jsonify(formatted_data)
+
+    except Exception as e:
+        logger.error('Error fetching weekly data:', exc_info=True)
+        return jsonify({'error': str(e)})
+
 
 @app.route('/video_feed')
 def video_feed():
@@ -188,26 +465,19 @@ def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
-
-@app.route('/data')
-def get_data():
-    data = []
-    with open('data.csv') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            data.append({
-                'date': row['date'],
-                'focused': int(row['focused']),
-                'not_focused': int(row['not_focused'])
-            })
-    return jsonify(data)
-
+@app.route('/generate_userid_QA', methods=['GET'])
+def generate_userid_QA():
+    logger.debug("Entering generate_userid_QA method")
+    from video_monitor import generate_user_id
+    user_id = generate_user_id()
+    if user_id is None:
+        return jsonify({'status': 'FAILURE', 'code': '500', 'message': 'User ID could not be generated.'})
+    return jsonify({'status': 'SUCCESS', 'code': '200 OK', 'user_id': user_id})
 
 
 if __name__ == '__main__':
     print("Starting the app...")
-    check_create_database(db_path)
+    logger.info("Starting the app...")
+    with app.app_context():
+        init_database()
     app.run(debug=True)

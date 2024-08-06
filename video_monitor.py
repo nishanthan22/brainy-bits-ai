@@ -1,7 +1,7 @@
 import csv
 import os
-import sqlite3
 import time
+import sqlite3
 
 import cv2
 import dlib
@@ -11,9 +11,8 @@ import tensorflow as tf
 from imutils import face_utils
 from scipy.ndimage import zoom
 from tensorflow.keras.models import load_model
-
-from db_utils import connect_to_db
-
+from datetime import datetime
+from config import logger
 
 def get_abs_path(directory, file):
     directory_path = os.path.join(os.getcwd(), '', directory)
@@ -21,23 +20,40 @@ def get_abs_path(directory, file):
     return file_path
 
 
-db_path = get_abs_path('data', 'brainy_bits.db')
-
-USER_ID_FILE = get_abs_path('data', 'last_user_id.txt')
-
-
 def generate_user_id():
-    if os.path.exists(USER_ID_FILE):
-        with open(USER_ID_FILE, 'r') as file:
-            last_id = int(file.read().strip())
+    from db_utils import get_db_connection
+    db_conn = get_db_connection()
+    db_cursor = db_conn.cursor()
+
+    logger.info("Creating user table if not exists")
+    db_cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_ids (
+            user_id REAL NOT NULL PRIMARY KEY,
+            date_created DATE NULL
+        )
+    ''')
+
+    # Get the last user_id from the table
+    db_cursor.execute('SELECT user_id FROM user_ids ORDER BY user_id DESC LIMIT 1')
+    result = db_cursor.fetchone()
+    if result:
+        last_id = int(result[0])
     else:
         last_id = 70000
+    logger.info("Last user id is: {}".format(last_id))
     next_id = last_id + 1
-    with open(USER_ID_FILE, 'w') as file:
-        file.write(str(next_id))
+    date_created = datetime.now().date()
 
-    user_id = f'{next_id:05}'
-    return user_id
+    # Insert the new user_id into the table
+    db_cursor.execute('''
+        INSERT INTO user_ids (user_id, date_created)
+        VALUES (%s, %s)
+    ''', (next_id, date_created))
+    logger.info("New user id : {} inserted in database".format(next_id))
+    db_conn.commit()
+    db_conn.close()
+
+    return next_id
 
 
 def generate_frames():
@@ -61,6 +77,8 @@ def generate_frames():
         A = np.linalg.norm(eye[1] - eye[5])
         B = np.linalg.norm(eye[2] - eye[4])
         C = np.linalg.norm(eye[0] - eye[3])
+        if C == 0:
+            return 0  # Avoid division by zero
         ear = (A + B) / (2.0 * C)
         return ear
 
@@ -71,6 +89,9 @@ def generate_frames():
     emotion_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     cap = cv2.VideoCapture(0)
+
+    person_ids = {}  # Dictionary to store person_id and corresponding user_id
+    next_user_id = generate_user_id()
 
     duration_eyes_closed = {}
     duration_looking_left = {}
@@ -101,12 +122,19 @@ def generate_frames():
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = detector(gray)
+
             for i, face in enumerate(faces):
                 shape = predictor(gray, face)
                 shape = face_utils.shape_to_np(shape)
 
                 person_id = f"Person {i + 1}"
-                user_id = generate_user_id()
+
+                # Assign a unique user ID to each person and reuse it if they reappear
+                if person_id not in person_ids:
+                    person_ids[person_id] = next_user_id
+                    next_user_id = generate_user_id()
+
+                user_id = person_ids[person_id]
 
                 if person_id not in duration_eyes_closed:
                     duration_eyes_closed[person_id] = 0
@@ -166,6 +194,8 @@ def generate_frames():
                 face_crop = gray[y:y + h, x:x + w]
                 face_crop = zoom(face_crop, (48 / face_crop.shape[0], 48 / face_crop.shape[1]))
                 face_crop = face_crop.astype(np.float32)
+                if face_crop.max() == 0:
+                    continue
                 face_crop /= float(face_crop.max())
                 face_crop = np.reshape(face_crop.flatten(), (1, 48, 48, 1))
 
@@ -202,43 +232,44 @@ def generate_frames():
                                 face_2d.append([x, y])
                                 face_3d.append([x, y, lm.z])
 
-                    face_2d = np.array(face_2d, dtype=np.float64)
-                    face_3d = np.array(face_3d, dtype=np.float64)
-                    focal_length = 1 * img_w
-                    cam_matrix = np.array([[focal_length, 0, img_w / 2],
-                                           [0, focal_length, img_h / 2],
-                                           [0, 0, 1]])
+                    if face_2d and face_3d:
+                        face_2d = np.array(face_2d, dtype=np.float64)
+                        face_3d = np.array(face_3d, dtype=np.float64)
+                        focal_length = 1 * img_w
+                        cam_matrix = np.array([[focal_length, 0, img_w / 2],
+                                               [0, focal_length, img_h / 2],
+                                               [0, 0, 1]])
 
-                    dist_matrix = np.zeros((4, 1), dtype=np.float64)
+                        dist_matrix = np.zeros((4, 1), dtype=np.float64)
 
-                    success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+                        success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+                        if success:
+                            rmat, jac = cv2.Rodrigues(rot_vec)
 
-                    rmat, jac = cv2.Rodrigues(rot_vec)
+                            angles, mtx_r, mtx_q, qx, qy, qz = cv2.RQDecomp3x3(rmat)
 
-                    angles, mtx_r, mtx_q, qx, qy, qz = cv2.RQDecomp3x3(rmat)
+                            x_angle = angles[0] * 360
+                            y_angle = angles[1] * 360
+                            z_angle = angles[2] * 360
 
-                    x_angle = angles[0] * 360
-                    y_angle = angles[1] * 360
-                    z_angle = angles[2] * 360
+                            if y_angle < -10:
+                                text = "Looking Left"
+                                time_left_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif y_angle > 10:
+                                text = "Looking Right"
+                                time_right_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif x_angle < -10:
+                                text = "Looking Down"
+                                time_down_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            elif x_angle > 10:
+                                text = "Looking Up"
+                                time_up_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
+                            else:
+                                text = "Looking Forward"
+                                time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
 
-                    if y_angle < -10:
-                        text = "Looking Left"
-                        time_left_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif y_angle > 10:
-                        text = "Looking Right"
-                        time_right_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif x_angle < -10:
-                        text = "Looking Down"
-                        time_down_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    elif x_angle > 10:
-                        text = "Looking Up"
-                        time_up_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-                    else:
-                        text = "Looking Forward"
-                        time_forward_seconds[person_id] += 1 / cap.get(cv2.CAP_PROP_FPS)
-
-                    cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                                (0, 255, 0), 2)
+                            cv2.putText(frame, f"{person_id}: {text}", (500, 50 + i * 50), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                        (0, 255, 0), 2)
 
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()
@@ -251,75 +282,53 @@ def generate_frames():
 
     finally:
         cap.release()
-
-        db_conn = connect_to_db(db_path)
+        from db_utils import get_db_connection  # Import here to avoid circular import
+        db_conn = get_db_connection()
         db_cursor = db_conn.cursor()
-        print("Starting the data processing...")
+        logger.info("video_monitor: Database connection established")
 
         try:
             for person_id in duration_eyes_closed:
+                user_id = person_ids[person_id]
+                logger.debug(f"Eye Track Data: user_id={user_id}, person_id={person_id}, duration_eyes_closed={duration_eyes_closed[person_id]}, duration_looking_left={duration_looking_left[person_id]}, duration_looking_right={duration_looking_right[person_id]}, duration_looking_straight={duration_looking_straight[person_id]}, count_left={count_left[person_id]}, count_right={count_right[person_id]}, count_straight={count_straight[person_id]}")
+                logger.debug(f"Executing SQL: INSERT INTO eye_track_data (user_id, Date, Person_ID, Duration_Eyes_Closed_s, Duration_Looking_Left_s, Duration_Looking_Right_s, Duration_Looking_Straight_s, Left_Counts, Right_Counts, Straight_Counts) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) with values ({user_id}, {datetime.now().date()}, {person_id}, {duration_eyes_closed[person_id]}, {duration_looking_left[person_id]}, {duration_looking_right[person_id]}, {duration_looking_straight[person_id]}, {count_left[person_id]}, {count_right[person_id]}, {count_straight[person_id]})")
                 db_cursor.execute('''
-                    INSERT INTO eye_track_data (user_id, Person_ID, Duration_Eyes_Closed_s, Duration_Looking_Left_s, Duration_Looking_Right_s, Duration_Looking_Straight_s, Left_Counts, Right_Counts, Straight_Counts)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, duration_eyes_closed[person_id], duration_looking_left[person_id],
+                    INSERT INTO eye_track_data (user_id, Date, Person_ID, Duration_Eyes_Closed_s, Duration_Looking_Left_s, Duration_Looking_Right_s, Duration_Looking_Straight_s, Left_Counts, Right_Counts, Straight_Counts)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (user_id, datetime.now().date(), person_id, duration_eyes_closed[person_id], duration_looking_left[person_id],
                       duration_looking_right[person_id], duration_looking_straight[person_id], count_left[person_id],
                       count_right[person_id], count_straight[person_id]))
-                print(f"Inserted eye track data for {user_id}")
+                logger.info(f"Inserted eye track data for {user_id}")
 
             for person_id in emotion_duration["angry"]:
+                user_id = person_ids[person_id]
+                logger.debug(f"Emotion Detect Data: user_id={user_id}, person_id={person_id}, angry={emotion_duration['angry'][person_id]}, sad={emotion_duration['sad'][person_id]}, happy={emotion_duration['happy'][person_id]}, fear={emotion_duration['fear'][person_id]}, disgust={emotion_duration['disgust'][person_id]}, neutral={emotion_duration['neutral'][person_id]}, surprise={emotion_duration['surprise'][person_id]}")
+                logger.debug(f"Executing SQL: INSERT INTO emotion_detect_data (user_id, Date, Person_ID, Angry_s, Sad_s, Happy_s, Fear_s, Disgust_s, Neutral_s, Surprise_s) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) with values ({user_id}, {datetime.now().date()}, {person_id}, {emotion_duration['angry'][person_id]}, {emotion_duration['sad'][person_id]}, {emotion_duration['happy'][person_id]}, {emotion_duration['fear'][person_id]}, {emotion_duration['disgust'][person_id]}, {emotion_duration['neutral'][person_id]}, {emotion_duration['surprise'][person_id]})")
                 db_cursor.execute('''
-                    INSERT INTO emotion_detect_data (user_id, Person_ID, Angry_s, Sad_s, Happy_s, Fear_s, Disgust_s, Neutral_s, Surprise_s)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, emotion_duration["angry"][person_id], emotion_duration["sad"][person_id],
+                    INSERT INTO emotion_detect_data (user_id, Date, Person_ID, Angry_s, Sad_s, Happy_s, Fear_s, Disgust_s, Neutral_s, Surprise_s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (user_id, datetime.now().date(), person_id, emotion_duration["angry"][person_id], emotion_duration["sad"][person_id],
                       emotion_duration["happy"][person_id], emotion_duration["fear"][person_id],
                       emotion_duration["disgust"][person_id], emotion_duration["neutral"][person_id],
                       emotion_duration["surprise"][person_id]))
-                print(f"Inserted emotion detect data for {user_id}")
+                logger.info(f"Inserted emotion detect data for {user_id}")
 
             for person_id in time_forward_seconds:
+                user_id = person_ids[person_id]
+                logger.debug(f"Head Pose Data: user_id={user_id}, person_id={person_id}, time_forward={time_forward_seconds[person_id]}, time_left={time_left_seconds[person_id]}, time_right={time_right_seconds[person_id]}, time_up={time_up_seconds[person_id]}, time_down={time_down_seconds[person_id]}")
+                logger.debug(f"Executing SQL: INSERT INTO head_pose_data (user_id, Date, Person_ID, Looking_Forward_s, Looking_Left_s, Looking_Right_s, Looking_Up_s, Looking_Down_s) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) with values ({user_id}, {datetime.now().date()}, {person_id}, {time_forward_seconds[person_id]}, {time_left_seconds[person_id]}, {time_right_seconds[person_id]}, {time_up_seconds[person_id]}, {time_down_seconds[person_id]})")
                 db_cursor.execute('''
-                    INSERT INTO head_pose_data (user_id, Person_ID, Looking_Forward_s, Looking_Left_s, Looking_Right_s, Looking_Up_s, Looking_Down_s)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (user_id, person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
+                    INSERT INTO head_pose_data (user_id, Date, Person_ID, Looking_Forward_s, Looking_Left_s, Looking_Right_s, Looking_Up_s, Looking_Down_s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (user_id, datetime.now().date(), person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
                       time_right_seconds[person_id], time_up_seconds[person_id], time_down_seconds[person_id]))
-                print(f"Inserted head pose data for {user_id}")
+                logger.info(f"Inserted head pose data for {user_id}")
 
             db_conn.commit()
-            print("Data committed to the database.")
-        except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.debug("Data committed to the database.")
         except Exception as e:
-            print(f"Exception in database operation: {e}")
+            logger.error(f"Exception in database operation: {e}")
         finally:
             db_conn.close()
-            print("Database connection closed.")
+            logger.info("video_monitor: Database connection closed.")
 
-        with open(get_abs_path('results', 'eye_tracking_data.csv'), 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(
-                ["Person ID", "Duration Eyes Closed (s)", "Duration Looking Left (s)", "Duration Looking Right (s)",
-                 "Duration Looking Straight (s)", "Left Counts", "Right Counts", "Straight Counts"])
-            for person_id in duration_eyes_closed:
-                writer.writerow([person_id, duration_eyes_closed[person_id], duration_looking_left[person_id],
-                                 duration_looking_right[person_id], duration_looking_straight[person_id],
-                                 count_left[person_id], count_right[person_id], count_straight[person_id]])
-
-        with open(get_abs_path('results', 'emotion_detection_data.csv'), 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Person ID", "Angry (s)", "Sad (s)", "Happy (s)", "Fear (s)", "Disgust (s)", "Neutral (s)",
-                             "Surprise (s)"])
-            for person_id in emotion_duration["angry"]:
-                writer.writerow([person_id, emotion_duration["angry"][person_id], emotion_duration["sad"][person_id],
-                                 emotion_duration["happy"][person_id], emotion_duration["fear"][person_id],
-                                 emotion_duration["disgust"][person_id], emotion_duration["neutral"][person_id],
-                                 emotion_duration["surprise"][person_id]])
-
-        with open(get_abs_path('results', 'head_pose_data.csv'), 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(
-                ["Person ID", "Looking Forward (s)", "Looking Left (s)", "Looking Right (s)", "Looking Up (s)",
-                 "Looking Down (s)"])
-            for person_id in time_forward_seconds:
-                writer.writerow([person_id, time_forward_seconds[person_id], time_left_seconds[person_id],
-                                 time_right_seconds[person_id], time_up_seconds[person_id],
-                                 time_down_seconds[person_id]])

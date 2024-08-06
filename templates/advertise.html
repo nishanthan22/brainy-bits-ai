@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Advertise with Us</h1>
+    <div class="card p-4">
+        <h2>Introduction</h2>
+        <p>Brainy Bits offers a range of advertising opportunities to help you reach educators and institutions interested in cutting-edge educational technology.</p>
+
+        <h2>Why Advertise with Us?</h2>
+        <p>Our platform connects you with educators, administrators, and tech enthusiasts focused on enhancing educational experiences through technology. Advertising with Brainy Bits allows you to promote your products or services to a targeted, engaged audience within the education sector.</p>
+
+        <h2>Advertising Options</h2>
+        <ul>
+            <li><strong>Sponsored Content:</strong> Feature your brand through sponsored articles or case studies that highlight how your solutions integrate with our AI-driven technologies.</li>
+            <li><strong>Banner Ads:</strong> Place banner ads on our website to reach visitors looking for innovative educational tools and technologies.</li>
+            <li><strong>Newsletter Sponsorships:</strong> Showcase your brand in our newsletter, distributed to our community of educators and tech professionals.</li>
+        </ul>
+
+        <h2>Contact Us</h2>
+        <p>If you are interested in advertising with us or would like more information about our advertising options, please contact our advertising team at <a href="{{ url_for('contact_us') }}">advertise@brainybits.com</a></p>
+    </div>
+</div>
+{% endblock %}
