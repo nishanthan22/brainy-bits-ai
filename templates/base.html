@@ -99,6 +99,7 @@
 
             document.querySelector('.footer').classList.remove('light-mode', 'dark-mode', 'pride-mode');
             document.querySelector('.footer').classList.add(mode);
+            localStorage.setItem('theme', mode);
 
             const video = document.getElementById('dynamicVideo');
             const videoSource = document.getElementById('videoSource');
