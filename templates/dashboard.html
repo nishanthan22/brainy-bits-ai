@@ -20,62 +20,122 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    fetch('/get_data')
-        .then(response => response.json())
-        .then(data => {
-            const ctx = document.getElementById('pieChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(data),
-                    datasets: [{
-                        data: Object.values(data),
-                        backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56']
-                    }]
-                }
-            });
-        });
+    let pieChartInstance, pieChartTodayInstance, lineChartInstance;
 
-    fetch('/get_data_today')
-        .then(response => response.json())
-        .then(data => {
-            const ctx = document.getElementById('pieChartToday').getContext('2d');
-            new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(data),
-                    datasets: [{
-                        data: Object.values(data),
-                        backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56']
-                    }]
-                }
-            });
-        });
+    function fetchAndRenderCharts() {
+        const theme = document.body.classList.contains('dark-mode') ? 'dark' :
+                      document.body.classList.contains('pride-mode') ? 'pride' : 'light';
+        console.log(theme)
 
-    fetch('/get_weekly_data')
-        .then(response => response.json())
-        .then(data => {
-            const labels = data.map(item => item.date);
-            const focusedData = data.map(item => item.focused);
-            const notFocusedData = data.map(item => item.not_focused);
-            const ctx = document.getElementById('lineChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Focused',
-                        data: focusedData,
-                        borderColor: '#36A2EB',
-                        fill: false
-                    }, {
-                        label: 'Not Focused',
-                        data: notFocusedData,
-                        borderColor: '#FF6384',
-                        fill: false
-                    }]
+        const chartColors = {
+            light: {
+                backgroundColor: ['#36A2EB', '#FF6384', '#FFCE56'],
+                borderColor: '#333'
+            },
+            dark: {
+                backgroundColor: ['#da7640', '#d7bd52', '#5678ff'],
+                borderColor: '#fff'
+            },
+            pride: {
+                backgroundColor: ['#a72859', '#e764cc', '#FFFF00', '#008000', '#0000FF', '#4B0082', '#EE82EE'],
+                borderColor: '#fff'
+            }
+        };
+
+        // Weekly Data Pie Chart
+        fetch('/get_data')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('pieChart').getContext('2d');
+                if (pieChartInstance) {
+                    pieChartInstance.destroy();
                 }
+                pieChartInstance = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(data),
+                        datasets: [{
+                            data: Object.values(data),
+                            backgroundColor: chartColors[theme].backgroundColor
+                        }]
+                    }
+                });
             });
-        });
+
+        // Today's Data Pie Chart
+        fetch('/get_data_today')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('pieChartToday').getContext('2d');
+                if (pieChartTodayInstance) {
+                    pieChartTodayInstance.destroy();
+                }
+                pieChartTodayInstance = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(data),
+                        datasets: [{
+                            data: Object.values(data),
+                            backgroundColor: chartColors[theme].backgroundColor
+                        }]
+                    }
+                });
+            });
+
+        // Line Chart for Weekly Data Distribution
+        fetch('/get_weekly_data')
+            .then(response => response.json())
+            .then(data => {
+                const labels = data.map(item => item.date);
+                const focusedData = data.map(item => item.focused);
+                const notFocusedData = data.map(item => item.not_focused);
+                const ctx = document.getElementById('lineChart').getContext('2d');
+                if (lineChartInstance) {
+                    lineChartInstance.destroy();
+                }
+                lineChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Focused',
+                            data: focusedData,
+                            borderColor: chartColors[theme].backgroundColor[0],
+                            fill: false
+                        }, {
+                            label: 'Not Focused',
+                            data: notFocusedData,
+                            borderColor: chartColors[theme].backgroundColor[1],
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: chartColors[theme].borderColor
+                                }
+                            },
+                            y: {
+                                ticks: {
+                                    color: chartColors[theme].borderColor
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchAndRenderCharts();
+
+        const themeSlider = document.getElementById('theme-slider');
+        if (themeSlider) {
+            themeSlider.addEventListener('input', function () {
+                setTimeout(fetchAndRenderCharts, 100); // Adjust the charts after theme change
+            });
+        }
+    });
 </script>
 {% endblock %}
